@@ -3,9 +3,11 @@
 Démo Streamlit autonome de recherche dans le catalogue produits Pramac.
 
 - **407 produits** dédupliqués, **4 737 caractéristiques techniques**
-- Recherche par mot-clé (nom / caractéristique / valeur), filtres par catégorie,
-  carburant et puissance (kVA)
-- Fiche produit avec image, specs groupées et lien source
+- 3 familles : Générateur · Manutention · Stockage énergie
+- **Recherche** : filtres famille / catégorie / carburant / puissance (kVA) / mot-clé,
+  fiche produit complète (toutes les specs groupées), sélecteur de colonnes
+- **Recherche IA (Gemini)** : question en langage naturel → filtres déduits + recommandations
+- **Données complètes** : tables produits & caractéristiques entières, export CSV
 
 Les données sont embarquées dans `pramac.sqlite` (aucune base externe requise).
 
@@ -15,6 +17,17 @@ Les données sont embarquées dans `pramac.sqlite` (aucune base externe requise)
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
+
+## Clé Gemini (onglet Recherche IA)
+
+L'onglet IA lit la clé depuis `GEMINI_API_KEY`.
+
+- **En local** : créer `.streamlit/secrets.toml` avec `GEMINI_API_KEY = "votre_clé"`
+  (déjà ignoré par git), ou exporter la variable d'environnement.
+- **Sur Streamlit Cloud** : app → **Settings → Secrets** → coller
+  `GEMINI_API_KEY = "votre_clé"`. Modèle utilisé : `gemini-2.5-flash`.
+
+Sans clé, les onglets Recherche et Données fonctionnent ; seul l'onglet IA est désactivé.
 
 ## Déploiement (Streamlit Community Cloud — gratuit)
 
