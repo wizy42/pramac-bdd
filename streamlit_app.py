@@ -84,22 +84,30 @@ def keyword_uuids(term: str) -> set[str]:
     return {r[0] for r in rows}
 
 
+_ENRICH_COLS = ("resume_technique", "resume_commercial", "cas_usage_principal",
+                "cas_usage_secondaires", "keywords")
+
+
+def _text_hit(df, term: str):
+    """Masque : produits dont nom/catégorie/specs/enrichissement contiennent `term`."""
+    t = term.strip().lower()
+    hit = (df["nom"].str.lower().str.contains(t, na=False)
+           | df["categorie"].str.lower().str.contains(t, na=False)
+           | df["product_uuid"].isin(keyword_uuids(term.strip())))
+    for col in _ENRICH_COLS:
+        if col in df.columns:
+            hit = hit | df[col].astype(str).str.lower().str.contains(t, na=False)
+    return hit
+
+
 def apply_filters(df, *, search="", familles=None, categories=None, fuels=None,
                   kva_lo=None, kva_hi=None, keywords=None, only_power=False):
     mask = pd.Series(True, index=df.index)
     if search:
-        term = search.strip().lower()
-        hit = (df["nom"].str.lower().str.contains(term, na=False)
-               | df["categorie"].str.lower().str.contains(term, na=False)
-               | df["product_uuid"].isin(keyword_uuids(search.strip())))
-        mask &= hit
+        mask &= _text_hit(df, search)
     for kw in keywords or []:
-        k = kw.strip().lower()
-        if not k:
-            continue
-        mask &= (df["nom"].str.lower().str.contains(k, na=False)
-                 | df["categorie"].str.lower().str.contains(k, na=False)
-                 | df["product_uuid"].isin(keyword_uuids(kw.strip())))
+        if kw.strip():
+            mask &= _text_hit(df, kw)
     if familles:
         mask &= df["famille"].isin(familles)
     if categories:
@@ -114,6 +122,38 @@ def apply_filters(df, *, search="", familles=None, categories=None, fuels=None,
     if kva_hi is not None:
         mask &= df["puissance_kva"].le(kva_hi) | df["puissance_kva"].isna()
     return df[mask]
+
+
+def _as_list(value):
+    if isinstance(value, str) and value.strip():
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return [value]
+    return []
+
+
+def _render_enrichment(prod):
+    cols = ("resume_technique", "resume_commercial", "cas_usage_principal")
+    if not any(isinstance(prod.get(c), str) and prod.get(c).strip() for c in cols):
+        return
+    with st.container(border=True):
+        st.markdown("##### 🤖 Analyse IA (Gemini)")
+        if isinstance(prod.get("resume_technique"), str) and prod["resume_technique"].strip():
+            st.markdown(f"**Résumé technique** — {prod['resume_technique']}")
+        if isinstance(prod.get("resume_commercial"), str) and prod["resume_commercial"].strip():
+            st.markdown(f"**Résumé commercial** — {prod['resume_commercial']}")
+        if isinstance(prod.get("cas_usage_principal"), str) and prod["cas_usage_principal"].strip():
+            st.markdown(f"**Cas d'usage principal** — {prod['cas_usage_principal']}")
+        sec = _as_list(prod.get("cas_usage_secondaires"))
+        if sec:
+            st.markdown("**Cas d'usage secondaires :** " + " · ".join(sec))
+        kws = _as_list(prod.get("keywords"))
+        if kws:
+            st.markdown("**Mots-clés :** " + "  ".join(f"`{k}`" for k in kws))
+        proches = [p for p in str(prod.get("produits_proches") or "").split("; ") if p]
+        if proches:
+            st.caption("Produits proches : " + ", ".join(proches))
 
 
 def product_card(prod):
@@ -132,6 +172,8 @@ def product_card(prod):
     st.markdown("  \n".join(meta))
     if isinstance(prod["url"], str) and prod["url"].startswith("http"):
         st.markdown(f"[Voir sur pramac.com ↗]({prod['url']})")
+
+    _render_enrichment(prod)
 
     attrs = load_attributes(prod["product_uuid"])
     if attrs.empty:
