@@ -7,6 +7,7 @@ Démo Streamlit autonome de recherche dans le catalogue produits Pramac.
 - **Recherche** : filtres famille / catégorie / carburant / puissance (kVA) / mot-clé,
   fiche produit complète (toutes les specs groupées), sélecteur de colonnes
 - **Recherche IA (Gemini)** : question en langage naturel → filtres déduits + recommandations
+- **Tables par famille** : tableau dédié par type (colonnes propres à la famille, PRD §7), export CSV
 - **Données complètes** : tables produits & caractéristiques entières, export CSV
 
 Les données sont embarquées dans `pramac.sqlite` (aucune base externe requise).

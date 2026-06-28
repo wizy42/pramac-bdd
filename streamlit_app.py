@@ -45,6 +45,36 @@ def load_attributes(product_uuid: str) -> pd.DataFrame:
 
 
 @st.cache_data
+def family_pivot(famille: str) -> pd.DataFrame:
+    """Table large d'une famille : 1 ligne = 1 produit, 1 colonne = 1 caractéristique.
+
+    La colonne combine libellé + unité (ex. « PUISSANCE SECOURS ESP (kVA) ») pour
+    distinguer les variantes (kVA vs kW). Reproduit le modèle « colonnes par famille »
+    du PRD §7 à partir du modèle générique attributs.
+    """
+    rows = pd.read_sql(
+        """SELECT p.product_uuid, p.nom, p.categorie, p.puissance_kva,
+                  a.attribut, a.valeur, a.unite
+           FROM products p JOIN attributes a ON a.product_uuid = p.product_uuid
+           WHERE p.famille = ?""",
+        get_conn(), params=(famille,),
+    )
+    if rows.empty:
+        return rows
+    rows["col"] = rows.apply(
+        lambda r: f"{r['attribut']} ({r['unite']})"
+        if isinstance(r["unite"], str) and r["unite"].strip() else r["attribut"],
+        axis=1,
+    )
+    rows = rows.drop_duplicates(["product_uuid", "col"])
+    wide = rows.pivot(index="product_uuid", columns="col", values="valeur")
+    meta = (rows[["product_uuid", "nom", "categorie"]]
+            .drop_duplicates("product_uuid").set_index("product_uuid"))
+    wide = meta.join(wide).reset_index(drop=True)
+    return wide
+
+
+@st.cache_data
 def keyword_uuids(term: str) -> set[str]:
     like = f"%{term}%"
     rows = get_conn().execute(
@@ -128,7 +158,8 @@ st.caption(
     f"Générateurs · Manutention · Stockage énergie — démo MVP"
 )
 
-tab_search, tab_ai, tab_data = st.tabs(["🔎 Recherche", "🤖 Recherche IA (Gemini)", "📊 Données complètes"])
+tab_search, tab_ai, tab_fam, tab_data = st.tabs(
+    ["🔎 Recherche", "🤖 Recherche IA (Gemini)", "🗂 Tables par famille", "📊 Données complètes"])
 
 # ============================ TAB 1 — Recherche ============================
 with tab_search:
@@ -241,7 +272,34 @@ with tab_ai:
                              "puissance_kva": "kVA", "carburant": "Carburant"}),
                 use_container_width=True, hide_index=True)
 
-# ========================= TAB 3 — Données complètes =======================
+# ===================== TAB 3 — Tables par famille =========================
+with tab_fam:
+    st.subheader("Tableau dédié par type de produit")
+    st.caption("Chaque famille a ses propres caractéristiques (PRD §7). "
+               "1 ligne = 1 produit · 1 colonne = 1 caractéristique (avec son unité).")
+    fam = st.radio("Famille", FAMILLES, horizontal=True)
+    wide = family_pivot(fam)
+    if wide.empty:
+        st.info("Aucune donnée pour cette famille.")
+    else:
+        n = len(wide)
+        spec_cols = [c for c in wide.columns if c not in ("nom", "categorie")]
+        coverage = {c: wide[c].notna().mean() for c in spec_cols}
+        min_cov = st.slider(
+            "Afficher les caractéristiques présentes sur au moins … % des produits",
+            0, 100, 30, step=5)
+        kept = [c for c in spec_cols if coverage[c] * 100 >= min_cov]
+        kept.sort(key=lambda c: coverage[c], reverse=True)
+        table = wide[["nom", "categorie"] + kept].rename(
+            columns={"nom": "Produit", "categorie": "Catégorie"})
+        st.caption(f"{n} produits · {len(kept)}/{len(spec_cols)} caractéristiques affichées")
+        st.dataframe(table, use_container_width=True, hide_index=True, height=460)
+        st.download_button(
+            f"⬇ Télécharger {fam}.csv",
+            wide.rename(columns={"nom": "Produit", "categorie": "Catégorie"}).to_csv(index=False),
+            f"pramac_{fam.lower().replace(' ', '_')}.csv", "text/csv")
+
+# ========================= TAB 4 — Données complètes =======================
 with tab_data:
     st.subheader("Table produits")
     st.caption(f"{len(products)} lignes · toutes les colonnes")
